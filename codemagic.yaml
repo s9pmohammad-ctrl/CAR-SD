@@ -1,0 +1,22 @@
+workflows:
+  car-sd-android:
+    name: CAR SD Android APK
+    max_build_duration: 30
+    environment:
+      java: 17
+    scripts:
+      - name: Create Gradle wrapper if needed
+        script: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.9
+          fi
+          chmod +x ./gradlew
+      - name: Build debug APK
+        script: |
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+      - name: Rename APK
+        script: |
+          cp app/build/outputs/apk/debug/app-debug.apk CAR-SD.apk
+    artifacts:
+      - CAR-SD.apk
+      - app/build/outputs/apk/debug/*.apk
