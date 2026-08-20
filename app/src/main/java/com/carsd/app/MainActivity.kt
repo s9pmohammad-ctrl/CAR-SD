@@ -60,6 +60,7 @@ fun CarSdApp(vm: CarSdViewModel = viewModel()) {
                     AudioCard(ui, vm)
                     FanCard(ui, vm)
                     ButtonLightCard(ui, vm)
+                    McuCard(ui, vm)
                     DiagnosticsCard(ui)
                     Spacer(Modifier.height(16.dp))
                 }
@@ -201,6 +202,18 @@ private fun ButtonLightCard(ui: UiState, vm: CarSdViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = TextDim
         )
+    }
+}
+
+@Composable
+private fun McuCard(ui: UiState, vm: CarSdViewModel) {
+    val fp = ui.fingerprint
+    SectionCard("MCU Match / T440") {
+        Text("پروفایل: ${fp?.matchedProfile ?: "نامشخص"}", color = if (fp?.matchedProfile != null) Accent else TextDim)
+        Text("اطمینان تطبیق: ${fp?.confidence ?: 0}٪", color = TextDim)
+        fp?.reasons?.take(5)?.forEach { Text("• $it", color = TextDim) }
+        Button(onClick = vm::exportReport, modifier = Modifier.fillMaxWidth()) { Text("ساخت گزارش کامل T440") }
+        ui.reportPath?.let { Text("مسیر گزارش:\n$it", color = TextDim, style = MaterialTheme.typography.bodySmall) }
     }
 }
 

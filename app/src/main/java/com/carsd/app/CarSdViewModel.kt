@@ -13,9 +13,11 @@ import kotlinx.coroutines.launch
 data class UiState(
     val settings: CarSettings = CarSettings(),
     val profile: HardwareProfile? = null,
+    val fingerprint: McuFingerprint? = null,
     val cpuTempC: Float? = null,
     val message: String = "آماده",
-    val fanSpinning: Boolean = false
+    val fanSpinning: Boolean = false,
+    val reportPath: String? = null
 )
 
 class CarSdViewModel(app: Application) : AndroidViewModel(app) {
@@ -28,39 +30,38 @@ class CarSdViewModel(app: Application) : AndroidViewModel(app) {
         detect()
         viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
-                val p = _ui.value.profile
-                if (p != null) {
-                    val temp = HardwareProbe.readTemperatureC(p)
-                    _ui.value = _ui.value.copy(cpuTempC = temp)
-                    autoFanTick(temp, p)
+                _ui.value.profile?.let { p ->
+                    val t = HardwareProbe.readTemperatureC(p)
+                    _ui.value = _ui.value.copy(cpuTempC = t)
+                    autoFanTick(t, p)
                 }
                 delay(2500)
             }
         }
     }
 
-    fun detect() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _ui.value = _ui.value.copy(message = "در حال شناسایی سخت‌افزار...")
-            val p = HardwareProbe.scan()
-            _ui.value = _ui.value.copy(
-                profile = p,
-                message = "شناسایی انجام شد"
-            )
-        }
+    fun detect() = viewModelScope.launch(Dispatchers.IO) {
+        _ui.value = _ui.value.copy(message = "در حال تطبیق MCU...")
+        val hw = HardwareProbe.scan()
+        val fp = McuMatcher.scan()
+        _ui.value = _ui.value.copy(profile = hw, fingerprint = fp,
+            message = fp.matchedProfile?.let { "MCU Match: $it (${fp.confidence}٪)" }
+                ?: "پروفایل MCU هنوز قطعی نیست")
     }
 
-    fun updateSettings(block: (CarSettings) -> CarSettings) {
-        _ui.value = _ui.value.copy(settings = block(_ui.value.settings))
+    fun exportReport() = viewModelScope.launch(Dispatchers.IO) {
+        val fp = _ui.value.fingerprint ?: return@launch
+        val f = DiagnosticReport.build(getApplication(), fp, _ui.value.profile)
+        _ui.value = _ui.value.copy(reportPath = f.absolutePath, message = "گزارش ساخته شد: ${f.name}")
     }
+
+    fun updateSettings(block: (CarSettings) -> CarSettings) { _ui.value = _ui.value.copy(settings = block(_ui.value.settings)) }
 
     fun saveAndApplyAudio() {
         val s = _ui.value.settings
         prefs.save(s)
         val r = audio.apply(s.mediaVolume, s.callVolume)
-        _ui.value = _ui.value.copy(
-            message = if (r.isSuccess) "صدای پیش‌فرض ذخیره و اعمال شد" else "اعمال صدا ناموفق بود: ${r.exceptionOrNull()?.message}"
-        )
+        _ui.value = _ui.value.copy(message = if (r.isSuccess) "صدای Android ذخیره شد" else "اعمال صدا ناموفق بود")
     }
 
     fun setManualFan(percent: Int) {
@@ -69,10 +70,8 @@ class CarSdViewModel(app: Application) : AndroidViewModel(app) {
         prefs.save(_ui.value.settings)
         viewModelScope.launch(Dispatchers.IO) {
             val r = HardwareProbe.writeFanPercent(p, percent)
-            _ui.value = _ui.value.copy(
-                fanSpinning = r.isSuccess && percent > 0,
-                message = if (r.isSuccess) "فن روی $percent٪ تنظیم شد" else "کنترل فن ممکن نشد: ${r.exceptionOrNull()?.message}"
-            )
+            _ui.value = _ui.value.copy(fanSpinning = r.isSuccess && percent > 0,
+                message = if (r.isSuccess) "فن sysfs روی $percent٪ تنظیم شد" else "کنترل MCU هنوز قفل است؛ گزارش لازم است")
         }
     }
 
@@ -80,26 +79,17 @@ class CarSdViewModel(app: Application) : AndroidViewModel(app) {
         val p = _ui.value.profile ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val r = HardwareProbe.writeButtonBrightness(p, percent)
-            _ui.value = _ui.value.copy(
-                message = if (r.isSuccess) "نور دکمه‌ها تنظیم شد" else "کنترل نور ممکن نشد: ${r.exceptionOrNull()?.message}"
-            )
+            _ui.value = _ui.value.copy(message = if (r.isSuccess) "نور تنظیم شد" else "LED احتمالاً از MCU کنترل می‌شود")
         }
     }
 
     private fun autoFanTick(temp: Float?, p: HardwareProfile) {
         val s = _ui.value.settings
         if (!s.fanAuto || temp == null || p.fanPwmPaths.isEmpty()) return
-        val shouldOn = temp >= s.fanOnTempC
-        val shouldOff = temp <= s.fanOffTempC
-        when {
-            shouldOn && !_ui.value.fanSpinning -> {
-                HardwareProbe.writeFanPercent(p, s.fanManualPercent)
-                _ui.value = _ui.value.copy(fanSpinning = true)
-            }
-            shouldOff && _ui.value.fanSpinning -> {
-                HardwareProbe.writeFanPercent(p, 0)
-                _ui.value = _ui.value.copy(fanSpinning = false)
-            }
+        if (temp >= s.fanOnTempC && !_ui.value.fanSpinning) {
+            HardwareProbe.writeFanPercent(p, s.fanManualPercent); _ui.value = _ui.value.copy(fanSpinning = true)
+        } else if (temp <= s.fanOffTempC && _ui.value.fanSpinning) {
+            HardwareProbe.writeFanPercent(p, 0); _ui.value = _ui.value.copy(fanSpinning = false)
         }
     }
 }

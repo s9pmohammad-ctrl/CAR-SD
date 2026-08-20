@@ -1,49 +1,24 @@
 name: Build CAR SD APK
-
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
-
+    branches: [ "main" ]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses > /dev/null || true
-
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Build debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
-
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk CAR-SD.apk
-
-      - name: Upload CAR SD APK
-        uses: actions/upload-artifact@v4
+      - run: gradle --no-daemon :app:assembleDebug
+      - run: cp app/build/outputs/apk/debug/app-debug.apk CAR-SD-v2-MCU-Matcher.apk
+      - uses: actions/upload-artifact@v4
         with:
-          name: CAR-SD-APK
-          path: CAR-SD.apk
-          if-no-files-found: error
-          retention-days: 30
+          name: CAR-SD-v2-MCU-Matcher
+          path: CAR-SD-v2-MCU-Matcher.apk
